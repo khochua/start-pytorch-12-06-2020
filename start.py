@@ -68,8 +68,8 @@ def prepare_data(path):
     # define standardization
     trans = Compose([ToTensor(), Normalize((0.1307,), (0.3081,))])
     # load dataset
-    train = MNIST(path, train=True, download=True, transform=trans)
-    test = MNIST(path, train=False, download=True, transform=trans)
+    train = MNIST(path, train=True, download=False, transform=trans)
+    test = MNIST(path, train=False, download=False, transform=trans)
     # prepare data loaders
     train_dl = DataLoader(train, batch_size=64, shuffle=True)
     test_dl = DataLoader(test, batch_size=1024, shuffle=False)
