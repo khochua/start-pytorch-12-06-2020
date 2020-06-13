@@ -1,108 +1,131 @@
 from numpy import vstack
+from numpy import argmax
 from pandas import read_csv
-from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score
-from torch.utils.data import Dataset
+from torchvision.datasets import MNIST
+from torchvision.transforms import Compose
+from torchvision.transforms import ToTensor
+from torchvision.transforms import Normalize
 from torch.utils.data import DataLoader
-from torch.utils.data import random_split
-from torch import Tensor
+from torch.nn import Conv2d
+from torch.nn import MaxPool2d
 from torch.nn import Linear
 from torch.nn import ReLU
-from torch.nn import Sigmoid
+from torch.nn import Softmax
 from torch.nn import Module
 from torch.optim import SGD
-from torch.nn import BCELoss
+from torch.nn import CrossEntropyLoss
 from torch.nn.init import kaiming_uniform_
 from torch.nn.init import xavier_uniform_
-
-class CSVDataset(Dataset):
-    def __init__(self, path):
-        df = read_csv(path, header=None)
-        self.X = df.values[:, :-1]
-        self.y = df.values[:, -1]
-        self.X = self.X.astype('float32')
-        self.y = LabelEncoder().fit_transform(self.y)
-        self.y = self.y.astype('float32')
-        self.y = self.y.reshape((len(self.y), 1))
-
-    def __len__(self):
-        return len(self.X)
-
-    def __getitem__(self, idx):
-        return [self.X[idx], self.y[idx]]
-
-    def get_splits(self, n_test=0.33):
-        test_size = round(n_test * len(self.X))
-        train_size = len(self.X) - test_size
-        return random_split(self, [train_size, test_size])
-
-class MLP(Module):
-    def __init__(self, n_inputs):
-        super(MLP, self).__init__()
-        self.hidden1 = Linear(n_inputs, 10)
+ 
+# model definition
+class CNN(Module):
+    # define model elements
+    def __init__(self, n_channels):
+        super(CNN, self).__init__()
+        # input to first hidden layer
+        self.hidden1 = Conv2d(n_channels, 32, (3,3))
         kaiming_uniform_(self.hidden1.weight, nonlinearity='relu')
         self.act1 = ReLU()
-        self.hidden2 = Linear(10, 8)
+        # first pooling layer
+        self.pool1 = MaxPool2d((2,2), stride=(2,2))
+        # second hidden layer
+        self.hidden2 = Conv2d(32, 32, (3,3))
         kaiming_uniform_(self.hidden2.weight, nonlinearity='relu')
         self.act2 = ReLU()
-        self.hidden3 = Linear(8, 1)
-        xavier_uniform_(self.hidden3.weight)
-        self.act3 = Sigmoid()
+        # second pooling layer
+        self.pool2 = MaxPool2d((2,2), stride=(2,2))
+        # fully connected layer
+        self.hidden3 = Linear(5*5*32, 100)
+        kaiming_uniform_(self.hidden3.weight, nonlinearity='relu')
+        self.act3 = ReLU()
+        # output layer
+        self.hidden4 = Linear(100, 10)
+        xavier_uniform_(self.hidden4.weight)
+        self.act4 = Softmax(dim=1)
  
+    # forward propagate input
     def forward(self, X):
+        # input to first hidden layer
         X = self.hidden1(X)
         X = self.act1(X)
+        X = self.pool1(X)
+        # second hidden layer
         X = self.hidden2(X)
         X = self.act2(X)
+        X = self.pool2(X)
+        # flatten
+        X = X.view(-1, 4*4*50)
+        # third hidden layer
         X = self.hidden3(X)
         X = self.act3(X)
+        # output layer
+        X = self.hidden4(X)
+        X = self.act4(X)
         return X
  
+# prepare the dataset
 def prepare_data(path):
-    dataset = CSVDataset(path)
-    train, test = dataset.get_splits()
-    train_dl = DataLoader(train, batch_size=32, shuffle=True)
+    # define standardization
+    trans = Compose([ToTensor(), Normalize((0.1307,), (0.3081,))])
+    # load dataset
+    train = MNIST(path, train=True, download=True, transform=trans)
+    test = MNIST(path, train=False, download=True, transform=trans)
+    # prepare data loaders
+    train_dl = DataLoader(train, batch_size=64, shuffle=True)
     test_dl = DataLoader(test, batch_size=1024, shuffle=False)
     return train_dl, test_dl
  
+# train the model
 def train_model(train_dl, model):
-    criterion = BCELoss()
+    # define the optimization
+    criterion = CrossEntropyLoss()
     optimizer = SGD(model.parameters(), lr=0.01, momentum=0.9)
-    for epoch in range(100):
+    # enumerate epochs
+    for epoch in range(10):
+        # enumerate mini batches
         for i, (inputs, targets) in enumerate(train_dl):
+            # clear the gradients
             optimizer.zero_grad()
+            # compute the model output
             yhat = model(inputs)
+            # calculate loss
             loss = criterion(yhat, targets)
+            # credit assignment
             loss.backward()
+            # update model weights
             optimizer.step()
  
+# evaluate the model
 def evaluate_model(test_dl, model):
     predictions, actuals = list(), list()
     for i, (inputs, targets) in enumerate(test_dl):
+        # evaluate the model on the test set
         yhat = model(inputs)
+        # retrieve numpy array
         yhat = yhat.detach().numpy()
         actual = targets.numpy()
+        # convert to class labels
+        yhat = argmax(yhat, axis=1)
+        # reshape for stacking
         actual = actual.reshape((len(actual), 1))
-        yhat = yhat.round()
+        yhat = yhat.reshape((len(yhat), 1))
+        # store
         predictions.append(yhat)
         actuals.append(actual)
     predictions, actuals = vstack(predictions), vstack(actuals)
+    # calculate accuracy
     acc = accuracy_score(actuals, predictions)
     return acc
  
-def predict(row, model):
-    row = Tensor([row])
-    yhat = model(row)
-    yhat = yhat.detach().numpy()
-    return yhat
- 
-path = 'https://raw.githubusercontent.com/jbrownlee/Datasets/master/ionosphere.csv'
+# prepare the data
+path = '~/Dev/start-pytorch-12-06-2020/data'
 train_dl, test_dl = prepare_data(path)
 print(len(train_dl.dataset), len(test_dl.dataset))
-model = MLP(34)
+# define the network
+model = CNN(1)
+# # train the model
 train_model(train_dl, model)
+# evaluate the model
 acc = evaluate_model(test_dl, model)
 print('Accuracy: %.3f' % acc)
-row = [1,0,0.99539,-0.05889,0.85243,0.02306,0.83398,-0.37708,1,0.03760,0.85243,-0.17755,0.59755,-0.44945,0.60536,-0.38223,0.84356,-0.38542,0.58212,-0.32192,0.56971,-0.29674,0.36946,-0.47357,0.56811,-0.51171,0.41078,-0.46168,0.21266,-0.34090,0.42267,-0.54487,0.18641,-0.45300]
-yhat = predict(row, model)
-print('Predicted: %.3f (class=%d)' % (yhat, yhat.round()))
