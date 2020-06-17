@@ -69,8 +69,8 @@ def prepare_data(path):
     # define standardization
     trans = Compose([ToTensor(), Normalize((0.1307,), (0.3081,))])
     # load dataset
-    train = MNIST(path, train=True, download=False, transform=trans)
-    test = MNIST(path, train=False, download=False, transform=trans)
+    train = MNIST(path, train=True, download=True, transform=trans)
+    test = MNIST(path, train=False, download=True, transform=trans)
     # prepare data loaders
     train_dl = DataLoader(train, batch_size=64, shuffle=True)
     test_dl = DataLoader(test, batch_size=1024, shuffle=False)
@@ -119,7 +119,7 @@ def evaluate_model(test_dl, model):
     return acc
  
 # prepare the data
-path = '~/Dev/start-pytorch-12-06-2020/data'
+path = '~/workspace/start-pytorch-12-06-2020/data'
 train_dl, test_dl = prepare_data(path)
 print(len(train_dl.dataset), len(test_dl.dataset))
 # define the network
